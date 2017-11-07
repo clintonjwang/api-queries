@@ -125,10 +125,14 @@ def query_accession_num(user, pw, acc_nums, target_dir, exclude_terms=[], region
         except:
             print('Accession number', acc_num, 'has no studies associated with it.')
             continue
-        print('Loading accession number', acc_num)
 
+        print('Loading accession number', acc_num)
         r, url = search_vna(user, pw, region=region, study=study)
-        study_info = r.json()
+        try:
+            study_info = r.json()
+        except:
+            print('Accession number', acc_num, 'with study ID', study, 'encountered an unknown error.')
+            continue
         series = list(set([ser['0020000E']['Value'][0] for ser in study_info]))
 
         instances = {}
@@ -184,7 +188,14 @@ def query_accession_num(user, pw, acc_nums, target_dir, exclude_terms=[], region
             
             while os.path.exists(acc_num_dir + "\\" + protocol_name):
                 protocol_name += "+"
-            os.rename(series_dir, acc_num_dir + "\\" + protocol_name)
+            try:
+                os.rename(series_dir, acc_num_dir + "\\" + protocol_name)
+            except:
+                protocol_name = "UnknownProtocol"
+                while os.path.exists(acc_num_dir + "\\" + protocol_name):
+                    protocol_name += "+"
+                os.rename(series_dir, acc_num_dir + "\\" + protocol_name)
+
             series_dir = acc_num_dir + "\\" + protocol_name
 
 
@@ -230,11 +241,8 @@ def query_accession_num(user, pw, acc_nums, target_dir, exclude_terms=[], region
     print("\nTime elapsed: %.1fs" % (time.time()-tot_time))
 
 
-def query_accession_num_clinton(user, pw, acc_nums, target_dir, exclude_terms=[], region="prod", verbose=False, max_instances=999):
-    """Arguments: acc_nums should be a list of accession numbers (as strings).
-    target_dir is the directory to save the images to.
-    exclude_terms is a list of terms to look for to exclude irrelevant protocols.
-    If verbose is True, prints to screen as each series is loaded. Otherwise, only prints as each study is loaded."""
+def query_accession_num_clinton(user, pw, acc_nums, target_dir, exclude_terms=[], region="prod", verbose=False, max_instances=999, modality="MR"):
+    """Version for Clinton's project (only selects MRIs, automatically renames T1 phases whenever possible, appends series number to folder name)"""
 
     tot_time = time.time()
     for acc_num in acc_nums:
@@ -246,7 +254,7 @@ def query_accession_num_clinton(user, pw, acc_nums, target_dir, exclude_terms=[]
             continue
         print('Loading accession number', acc_num)
 
-        r, url = search_vna(user, pw, region=region, study=study, modality="MR")
+        r, url = search_vna(user, pw, region=region, study=study, modality=modality)
         study_info = r.json()
         series = list(set([ser['0020000E']['Value'][0] for ser in study_info]))
 
@@ -320,7 +328,14 @@ def query_accession_num_clinton(user, pw, acc_nums, target_dir, exclude_terms=[]
             
             while os.path.exists(acc_num_dir + "\\" + protocol_name):
                 protocol_name += "+"
-            os.rename(series_dir, acc_num_dir + "\\" + protocol_name)
+            try:
+                os.rename(series_dir, acc_num_dir + "\\" + protocol_name)
+            except:
+                protocol_name = "UnknownProtocol"
+                while os.path.exists(acc_num_dir + "\\" + protocol_name):
+                    protocol_name += "+"
+                os.rename(series_dir, acc_num_dir + "\\" + protocol_name)
+
             series_dir = acc_num_dir + "\\" + protocol_name
 
 
