@@ -4,7 +4,7 @@ import os
 import time
 import easygui
 
-def search_vna(user, pw, acc_num=None, study=None, series=None, region='test', limit=None, modality="MR"):
+def search_vna(user, pw, acc_num=None, study=None, series=None, region='test', limit=None, modality=None):
     if region == 'test':
         host = 'vnatest1vt'
         port = '8083'
@@ -119,7 +119,7 @@ def query_accession_num(user, pw, acc_nums, target_dir, exclude_terms=[], region
 
     tot_time = time.time()
     for acc_num in acc_nums:
-        r, url = search_vna(user, pw, region=region, acc_num=acc_num, )
+        r, url = search_vna(user, pw, region=region, acc_num=acc_num)
         try:
             study = r.json()[0]['0020000D']['Value'][0]
         except:
@@ -127,14 +127,14 @@ def query_accession_num(user, pw, acc_nums, target_dir, exclude_terms=[], region
             continue
         print('Loading accession number', acc_num)
 
-        r, url = search_vna(user, pw, region=region, study=study, )
+        r, url = search_vna(user, pw, region=region, study=study)
         study_info = r.json()
         series = list(set([ser['0020000E']['Value'][0] for ser in study_info]))
 
         instances = {}
 
         for ser in series:
-            r, url = search_vna(user, pw, region=region, study=study, series=ser, modality=None)
+            r, url = search_vna(user, pw, region=region, study=study, series=ser)
             series_info = r.json()
             instances[ser] = [inst['00080018']['Value'][0] for inst in series_info]
 
@@ -230,7 +230,7 @@ def query_accession_num(user, pw, acc_nums, target_dir, exclude_terms=[], region
     print("\nTime elapsed: %.1fs" % (time.time()-tot_time))
 
 
-def query_accession_num_clinton(user, pw, acc_nums, target_dir, exclude_terms=[], region="prod", verbose=False):
+def query_accession_num_clinton(user, pw, acc_nums, target_dir, exclude_terms=[], region="prod", verbose=False, max_instances=999):
     """Arguments: acc_nums should be a list of accession numbers (as strings).
     target_dir is the directory to save the images to.
     exclude_terms is a list of terms to look for to exclude irrelevant protocols.
@@ -246,7 +246,7 @@ def query_accession_num_clinton(user, pw, acc_nums, target_dir, exclude_terms=[]
             continue
         print('Loading accession number', acc_num)
 
-        r, url = search_vna(user, pw, region=region, study=study)
+        r, url = search_vna(user, pw, region=region, study=study, modality="MR")
         study_info = r.json()
         series = list(set([ser['0020000E']['Value'][0] for ser in study_info]))
 
@@ -256,6 +256,8 @@ def query_accession_num_clinton(user, pw, acc_nums, target_dir, exclude_terms=[]
             r, url = search_vna(user, pw, region=region, study=study, series=ser)
             series_info = r.json()
             instances[ser] = [inst['00080018']['Value'][0] for inst in series_info]
+            if len(instances[ser]) > max_instances:
+                del instances[ser]
 
         acc_num_dir = target_dir + "\\" + acc_num
 
