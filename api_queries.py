@@ -89,10 +89,11 @@ def collect_studies(user, pw, query_terms, options):
 				print('Accession number', acc_num, 'has no studies associated with it.')
 				continue
 			
-			study_id, study_description = r.json()[0]['0020000D']['Value'][0], r.json()[0]['00081030']['Value'][0]
+			study_id = r.json()[0]['0020000D']['Value'][0]
+			study_info = (r.json()[0]['00081030']['Value'][0], r.json()[0]['00080020']['Value'][0])
 
 			instance_dict = _create_instance_dict(user, pw, study_id, series_search_terms, instance_search_terms)
-			study_dict[acc_num] = (study_id, instance_dict, study_description)
+			study_dict[acc_num] = (study_id, instance_dict, study_info)
 
 	elif options['search_type'] == "mrn":
 		for mrn in query_terms:
@@ -103,13 +104,13 @@ def collect_studies(user, pw, query_terms, options):
 				print('MRN', mrn, 'has no studies associated with it.')
 				continue
 
-			accnums_studyids_descr = set([(json_data['00080050']['Value'][0], json_data['0020000D']['Value'][0],
-						json_data['00081030']['Value'][0]) for json_data in r.json()])
+			accnums_studyids_descr = [(json_data['00080050']['Value'][0], json_data['0020000D']['Value'][0],
+						(json_data['00081030']['Value'][0], json_data['00080020']['Value'][0])) for json_data in r.json()]
 			
 			study_dict[mrn] = {}
-			for acc_num, study_id, study_description in accnums_studyids_descr:
+			for acc_num, study_id, study_info in accnums_studyids_descr:
 				instance_dict = _create_instance_dict(user, pw, study_id, series_search_terms, instance_search_terms)
-				study_dict[mrn][acc_num] = (study_id, instance_dict, study_description)
+				study_dict[mrn][acc_num] = (study_id, instance_dict, study_info)
 
 	elif options['search_type'] == 'keyword':
 		for keywords in itertools.permutations(query_terms):
@@ -119,15 +120,55 @@ def collect_studies(user, pw, query_terms, options):
 			if r.status_code == 204:
 				continue
 
-			accnums_studyids_descr = set([(json_data['00080050']['Value'][0], json_data['0020000D']['Value'][0],
-						json_data['00081030']['Value'][0]) for json_data in r.json()])
+			accnums_studyids_descr = [(json_data['00080050']['Value'][0], json_data['0020000D']['Value'][0],
+						(json_data['00081030']['Value'][0], json_data['00080020']['Value'][0])) for json_data in r.json()]
 
-			for acc_num, study_id, study_description in accnums_studyids_descr:
+			for acc_num, study_id, study_info in accnums_studyids_descr:
 				instance_dict = _create_instance_dict(user, pw, study_id, series_search_terms, instance_search_terms)
-				study_dict[acc_num] = (study_id, instance_dict, study_description)
+				study_dict[acc_num] = (study_id, instance_dict, study_info)
 
 	else:
 		raise ValueError(options['search_type'])
+
+	return study_dict
+
+def review_studies(study_dict, search_type):
+	"""Allows the user to select among queried studies."""
+	if search_type in ["accnum", "keyword"]:
+		choices = []
+		for acc_num in study_dict:
+			_, instance_dict, study_info = study_dict[acc_num]
+			study_description, study_date = study_info
+			choices.append("%s / %s (%d series) | %s" % (acc_num, study_description, len(instance_dict), reformat_date(study_date)))
+		
+		selection = easygui.multchoicebox(title='Select studies to download', choices=choices)
+		if selection is None:
+			return None
+		else:
+			selected_accnums = [x[:x.find(' ')] for x in selection if x != "Add more choices"]
+			study_dict = {acc_num: study_dict[acc_num] for acc_num in selected_accnums}
+	
+	elif search_type == "mrn":
+		choices = []
+		for mrn in study_dict:
+			for acc_num in study_dict[mrn]:
+				_, instance_dict, study_info = study_dict[mrn][acc_num]
+				study_description, study_date = study_info
+				choices.append("%s | %s / %s (%d series) | %s" % (mrn, acc_num, study_description, len(instance_dict), reformat_date(study_date)))
+		
+		selection = easygui.multchoicebox(title='Select studies to download', choices=choices)
+		if selection is None:
+			return None
+		else:
+			selected_mrn_accnums = [x[:x.find('/')-1].split('|') for x in selection if x != "Add more choices"]
+			selected_mrns = set([x[0].strip() for x in selected_mrn_accnums])
+			selected_accnums = set([x[1].strip() for x in selected_mrn_accnums])
+			study_dict = {mrn: study_dict[mrn] for mrn in selected_mrns}
+			for mrn in study_dict:
+				study_dict[mrn] = {acc_num: study_dict[mrn][acc_num] for acc_num in selected_accnums if acc_num in study_dict[mrn]}
+
+	else:
+		raise ValueError("Invalid search_type ", search_type)
 
 	return study_dict
 
@@ -188,44 +229,6 @@ def retrieve_studies(user, pw, study_dict, options, metadata_only=False, verbose
 
 	print("Time elapsed: %.1fs" % (time.time()-tot_time))
 
-def review_studies(study_dict, search_type):
-	"""Allows the user to select among queried studies."""
-	if search_type in ["accnum", "keyword"]:
-		choices = []
-		for acc_num in study_dict:
-			study_id, instance_dict, study_desc = study_dict[acc_num]
-			choices.append("%s / %s (%d series)" % (acc_num, study_desc, len(instance_dict)))
-		
-		selection = easygui.multchoicebox(msg='Select studies to download', title='Studies to download', choices=choices)
-		if selection is None:
-			return None
-		else:
-			selected_accnums = [x[:x.find(' ')] for x in selection if x != "Add more choices"]
-			study_dict = {acc_num: study_dict[acc_num] for acc_num in selected_accnums}
-	
-	elif search_type == "mrn":
-		choices = []
-		for mrn in study_dict:
-			for acc_num in study_dict[mrn]:
-				_, instance_dict, study_desc = study_dict[mrn][acc_num]
-				choices.append("%s|%s / %s (%d series)" % (mrn, acc_num, study_desc, len(instance_dict)))
-		
-		selection = easygui.multchoicebox(msg='Select studies to download', title='Studies to download', choices=choices)
-		if selection is None:
-			return None
-		else:
-			selected_mrn_accnums = [x[:x.find(' ')].split('|') for x in selection if x != "Add more choices"]
-			selected_mrns = set([x[0] for x in selected_mrn_accnums])
-			selected_accnums = set([x[1] for x in selected_mrn_accnums])
-			study_dict = {mrn: study_dict[mrn] for mrn in selected_mrns}
-			for mrn in study_dict:
-				study_dict[mrn] = {acc_num: study_dict[mrn][acc_num] for acc_num in selected_accnums if acc_num in study_dict[mrn]}
-
-	else:
-		raise ValueError("Invalid search_type ", search_type)
-
-	return study_dict
-
 #####################################
 ### Get user input
 #####################################
@@ -248,7 +251,7 @@ def get_inputs_gui():
 
 		msg = "How do you want to query studies?"
 		choices = ["Accession Numbers", "Patient MRNs", "Study Keywords"]
-		reply = easygui.buttonbox(msg, choices=choices)
+		reply = easygui.buttonbox(msg, msg, choices=choices)
 		if reply == choices[0]:
 			options['search_type'] = "accnum"
 			options['review'] = False
@@ -428,6 +431,9 @@ def retrieve_study_from_id(user, pw, study_id, instance_dict, save_dir, options,
 		for d in rmdir:
 			os.rename(save_dir + "\\" + d, save_dir + "\\others\\" + d)
 
+def reformat_date(date, in_format="%Y%m%d", out_format="%x"):
+	return datetime.datetime.strptime(date, in_format).strftime(out_format)
+
 def _parse_field_value(txt):
 	if txt.strip() == "":
 		return None
@@ -452,7 +458,7 @@ def _create_instance_dict(user, pw, study_id, series_search_terms, instance_sear
 
 	return instance_dict
 
-def _search_vna(user, pw, study_id=None, series=None, region='prod', args=None, search_terms=None):
+def _search_vna(user, pw, study_id=None, series=None, region='test', args=None, search_terms=None):
 	"""Use AcuoREST API to search VNA for study_id, series, and/or instance numbers associated with an accession number"""
 
 	if region == 'test':
@@ -464,10 +470,8 @@ def _search_vna(user, pw, study_id=None, series=None, region='prod', args=None, 
 	else:
 		raise ValueError("Unsupported region")
 
-
 	url = ''.join(['http://', host, ':', port,
 				   "/AcuoREST/dicomrs/search/studies"])
-
 
 	if study_id is not None:
 		url += "/" + study_id + "/series"
@@ -484,12 +488,14 @@ def _search_vna(user, pw, study_id=None, series=None, region='prod', args=None, 
 	r = requests.get(url, auth=(user, pw))
 	if r.status_code == 403:
 		raise ValueError('Access denied. Probably incorrect login information.')
+	elif r.status_code >= 500:
+		raise ValueError('Internal server error. Try again in a few minutes or contact IT.')
 	#if r.status_code != 200:
 		#raise ValueError("Invalid request (response code %d) for URL: %s" % (r.status_code, url))
 		
 	return r, url
 
-def _retrieve_vna(user, pw, filepath, study_id=None, series=None, instance=None, region='prod', metadata=False):
+def _retrieve_vna(user, pw, filepath, study_id=None, series=None, instance=None, region='test', metadata=False):
 	"""Retrieve dicom files and metadata associated with a study_id/series/instance.
 	If metadata is true, filepath should end in xml. Else end in dcm."""
 
@@ -568,7 +574,7 @@ def main(args):
 
 	[user, pw, query_terms, options] = ret
 
-	print("Collecting study ids...")
+	print("Searching database...")
 	study_info = collect_studies(user, pw, query_terms, options)
 
 	if len(study_info) == 0:
@@ -579,7 +585,7 @@ def main(args):
 		if study_info is None:
 			return
 
-	print("Retrieving studies...")
+	print("Downloading studies...")
 	retrieve_studies(user, pw, study_info, options, verbose=options['verbose'])
 
 if __name__ == "__main__":
