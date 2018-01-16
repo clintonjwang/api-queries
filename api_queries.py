@@ -24,17 +24,17 @@ Usage:
 	python api_queries.py accnum -q E123456789 E012345678 -s E:/dcms
 		#download studies for accession numbers E123456789 and E012345678, and save in the folder E:/dcms
 
-	python api_queries.py keyword -q contrast mri abdom -d1 20020101
-		#find all accession numbers for studies containing keywords "contrast", "mri" AND "abdom"
-		#that took place in 2002 or later
-
 	python api_queries.py mrn -p E:/mrns.txt -s E:/dcms
 		#download studies for all MRNs in mrns.txt and save in E:/dcms
 
-	python api_queries.py accnum -p E:/accnums.txt -s E:/dcms -e sub cor -o -m MR -d1 20020101 -d2 20091231
+	python api_queries.py keyword -q contrast mri abdom -d1 20160101 -r
+		#find all accession numbers for studies containing keywords "contrast", "mri" AND "abdom"
+		#that took place in 2016 or later; review studies before downloading
+
+	python api_queries.py accnum -p E:/accnums.txt -s E:/dcms -e sub cor -m MR -d1 20020101 -d2 20091231 -ov
 		#download studies for all accession numbers in accnums.txt and save in E:/dcms for studies between
 		#2002 and 2009; ignore non-MR series, ignore series with "sub" or "cor" in the description, and
-		#overwrite existing folders in E:/dcms if necessary
+		#overwrite existing folders in E:/dcms if necessary; use verbose output
 
 Author: Clinton Wang, E-mail: clinton.wang@yale.edu, Github: https://github.com/clintonjwang/api-queries
 """
@@ -134,6 +134,8 @@ def collect_studies(user, pw, query_terms, options):
 
 def review_studies(study_dict, search_type):
 	"""Allows the user to select among queried studies."""
+	msg = "The following studies were found based on your query. Select which studies you want to download."
+	title = 'Select studies to download'
 	if search_type in ["accnum", "keyword"]:
 		choices = []
 		for acc_num in study_dict:
@@ -141,7 +143,7 @@ def review_studies(study_dict, search_type):
 			study_description, study_date = study_info
 			choices.append("%s / %s (%d series) | %s" % (acc_num, study_description, len(instance_dict), reformat_date(study_date)))
 		
-		selection = easygui.multchoicebox(title='Select studies to download', choices=choices)
+		selection = easygui.multchoicebox(msg, title, choices=choices)
 		if selection is None:
 			return None
 		else:
@@ -156,7 +158,7 @@ def review_studies(study_dict, search_type):
 				study_description, study_date = study_info
 				choices.append("%s | %s / %s (%d series) | %s" % (mrn, acc_num, study_description, len(instance_dict), reformat_date(study_date)))
 		
-		selection = easygui.multchoicebox(title='Select studies to download', choices=choices)
+		selection = easygui.multchoicebox(msg, title, choices=choices)
 		if selection is None:
 			return None
 		else:
@@ -172,7 +174,7 @@ def review_studies(study_dict, search_type):
 
 	return study_dict
 
-def retrieve_studies(user, pw, study_dict, options, metadata_only=False, verbose=False, get_series_name=None):
+def retrieve_studies(user, pw, study_dict, options, metadata_only=False, get_series_name=None):
 	"""Download all studies associated with an accession number
 	Each accession number (study_id) is saved to a separate folder named with its study_id UID.
 	Within that folder, each series is saved to a separate subfolder, named with the series description.
@@ -183,7 +185,6 @@ def retrieve_studies(user, pw, study_dict, options, metadata_only=False, verbose
 	studies -- a list of tuples; each tuple study_id/series/instance 
 	options -- dict of parameters for how to retrieve the studies; must have 'save_dir', 'search_type' and 'overwrite' keys
 	metadata_only -- if True, only retrieves image metadata xmls
-	verbose -- if True, prints to screen as each series is loaded, else only prints as each study_id is loaded (default False)
 	get_series_name -- specify a custom method for naming series subfolders (optional)
 	"""
 
@@ -208,7 +209,7 @@ def retrieve_studies(user, pw, study_dict, options, metadata_only=False, verbose
 			print("= Loading accession number", acc_num)
 			study_id, instance_dict, _ = study_dict[acc_num]
 			retrieve_study_from_id(user, pw, study_id, instance_dict, os.path.join(options['save_dir'], acc_num),
-				options, metadata_only, verbose, get_series_name)
+				options, metadata_only, get_series_name)
 	
 	elif options['search_type'] == "mrn":
 		for mrn in study_dict:
@@ -217,12 +218,12 @@ def retrieve_studies(user, pw, study_dict, options, metadata_only=False, verbose
 				print("= Loading accession number", acc_num)
 				study_id, instance_dict, _ = study_dict[mrn][acc_num]
 				retrieve_study_from_id(user, pw, study_id, instance_dict, os.path.join(options['save_dir'], mrn, acc_num),
-					options, metadata_only, verbose, get_series_name)
+					options, metadata_only, get_series_name)
 
 	else:
 		raise ValueError("Invalid options['search_type'] ", options['search_type'])
 			
-	#if verbose:
+	#if options["verbose"]:
 	#	print("Series loaded: ", len(series)-skip_ser, "/", len(series), sep="")
 	#	print("\nTotal images loaded:", total)
 	#	print("Images skipped:", skip_inst)
@@ -345,11 +346,25 @@ def get_inputs_cmd(args):
 
 	return [user, pw, query_terms, vars(args)]
 
+def init_options():
+	options={}
+	options["search_type"] = "accnum"
+	options["start_date"] = None
+	options["end_date"] = None
+	options["modality"] = None
+	options["save_dir"] = '.'
+	options["exclude_terms"] = []
+	options["verbose"] = False
+	options["overwrite"] = True
+	options["review"] = False
+
+	return options
+
 #####################################
 ### Subroutines
 #####################################
 
-def retrieve_study_from_id(user, pw, study_id, instance_dict, save_dir, options, metadata_only, verbose, get_series_name):
+def retrieve_study_from_id(user, pw, study_id, instance_dict, save_dir, options, metadata_only, get_series_name):
 	if os.path.exists(save_dir):
 		if not options['overwrite']:
 			print(save_dir, "may already have been downloaded (folder already exists in target directory). Skipping.")
@@ -375,7 +390,7 @@ def retrieve_study_from_id(user, pw, study_id, instance_dict, save_dir, options,
 						  study_id=study_id, series=series_id, metadata=True)
 		if r is None:
 			skip_ser += 1
-			if verbose:
+			if options["verbose"]:
 				print("Skipping series %s (no instances found)." % series_id)
 			continue
 
@@ -400,7 +415,7 @@ def retrieve_study_from_id(user, pw, study_id, instance_dict, save_dir, options,
 			for exc_keyword in options['exclude_terms']:
 				if exc_keyword in series_name:
 					skip_ser += 1
-					if verbose:
+					if options["verbose"]:
 						print("Skipping series", series_name)
 					rmdir.append(series_name)
 					skip = True
@@ -413,7 +428,7 @@ def retrieve_study_from_id(user, pw, study_id, instance_dict, save_dir, options,
 
 
 		#Load the actual images
-		if verbose:
+		if options["verbose"]:
 			print("Loading series:", series_name)
 
 		for count, instance_id in enumerate(instance_dict[series_id]):
@@ -458,7 +473,7 @@ def _create_instance_dict(user, pw, study_id, series_search_terms, instance_sear
 
 	return instance_dict
 
-def _search_vna(user, pw, study_id=None, series=None, region='test', args=None, search_terms=None):
+def _search_vna(user, pw, study_id=None, series=None, region='prod', args=None, search_terms=None):
 	"""Use AcuoREST API to search VNA for study_id, series, and/or instance numbers associated with an accession number"""
 
 	if region == 'test':
@@ -489,13 +504,14 @@ def _search_vna(user, pw, study_id=None, series=None, region='test', args=None, 
 	if r.status_code == 403:
 		raise ValueError('Access denied. Probably incorrect login information.')
 	elif r.status_code >= 500:
-		raise ValueError('Internal server error. Try again in a few minutes or contact IT.')
+		print(url)
+		raise ValueError('Server exception. Make sure arguments were specified in the right format.')
 	#if r.status_code != 200:
 		#raise ValueError("Invalid request (response code %d) for URL: %s" % (r.status_code, url))
 		
 	return r, url
 
-def _retrieve_vna(user, pw, filepath, study_id=None, series=None, instance=None, region='test', metadata=False):
+def _retrieve_vna(user, pw, filepath, study_id=None, series=None, instance=None, region='prod', metadata=False):
 	"""Retrieve dicom files and metadata associated with a study_id/series/instance.
 	If metadata is true, filepath should end in xml. Else end in dcm."""
 
@@ -586,7 +602,7 @@ def main(args):
 			return
 
 	print("Downloading studies...")
-	retrieve_studies(user, pw, study_info, options, verbose=options['verbose'])
+	retrieve_studies(user, pw, study_info, options)
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description='Download imaging studies from the YNHH VNA API. \
