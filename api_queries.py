@@ -79,6 +79,9 @@ def collect_studies(user, pw, query_terms, options):
 		study_search_terms["ModalitiesInStudy"] = "*" + options['modality'] + "*"
 		series_search_terms["Modality"] = options['modality']
 
+	if "limit" in options and options["limit"] is not None:
+		study_search_terms["limit"] = options["limit"]
+
 	study_dict = {}
 	if options['search_type'] == "accnum":
 		for acc_num in query_terms:
@@ -200,6 +203,11 @@ def retrieve_studies(user, pw, study_dict, options, metadata_only=False, get_ser
 			series_name = series_name.replace("?", "")
 			series_name = series_name.replace("*", "")
 
+			search = '<DicomAttribute tag="00200011" vr="IS" keyword="SeriesNumber">\r\n      <Value number="1">'
+			index = txt.find(search) + len(search)
+			series_num = txt[index:index + txt[index:].find("</Value>")]
+			protocol_name += "_" + series_num
+
 			return series_name
 
 	tot_time = time.time()
@@ -301,6 +309,7 @@ def get_inputs_gui():
 		options['exclude_terms'] = fieldValues[4].replace(',', ' ').split()
 		#options['include_terms'] = fieldValues[5].replace(',', ' ').split()
 		options['verbose'] = True
+		options['keep_phi'] = False
 
 		options['save_dir'] = easygui.diropenbox(msg='Select a folder to save your images to.')
 		if options['save_dir'] is None:
@@ -433,7 +442,7 @@ def retrieve_study_from_id(user, pw, study_id, instance_dict, save_dir, options,
 
 		for count, instance_id in enumerate(instance_dict[series_id]):
 			r, _ = _retrieve_vna(user, pw, filepath=series_dir+"\\"+str(count)+".dcm",
-						  study_id=study_id, series=series_id, instance=instance_id)
+						  study_id=study_id, series=series_id, instance=instance_id, anonymize_dcm=~options["keep_phi"])
 
 			if r is not None:
 				skip_inst += 1
@@ -511,7 +520,7 @@ def _search_vna(user, pw, study_id=None, series=None, region='prod', args=None, 
 		
 	return r, url
 
-def _retrieve_vna(user, pw, filepath, study_id=None, series=None, instance=None, region='prod', metadata=False):
+def _retrieve_vna(user, pw, filepath, study_id=None, series=None, instance=None, region='prod', metadata=False, anonymize_dcm=True):
 	"""Retrieve dicom files and metadata associated with a study_id/series/instance.
 	If metadata is true, filepath should end in xml. Else end in dcm."""
 
@@ -564,14 +573,20 @@ def _retrieve_vna(user, pw, filepath, study_id=None, series=None, instance=None,
 			#raise ValueError("Invalid request (response code %d) for URL: %s" % (r.status_code, url))
 			return None, url
 
-		save_dir = os.path.dirname(filepath)
-		with open(save_dir + "\\temp.dcm", 'wb') as fd:
-			for chunk in r.iter_content(chunk_size=128):
-				fd.write(chunk)
+		if anonymize_dcm:
+			save_dir = os.path.dirname(filepath)
+			with open(save_dir + "\\temp.dcm", 'wb') as fd:
+				for chunk in r.iter_content(chunk_size=128):
+					fd.write(chunk)
 
-		anonymize.anonymize(filename = save_dir + "\\temp.dcm", output_filename=filepath)
+			anonymize.anonymize(filename = save_dir + "\\temp.dcm", output_filename=filepath)
 
-		os.remove(save_dir + "\\temp.dcm")
+			os.remove(save_dir + "\\temp.dcm")
+
+		else:
+			with open(filepath, 'wb') as fd:
+				for chunk in r.iter_content(chunk_size=128):
+					fd.write(chunk)
 		
 	return r, url
 
@@ -606,7 +621,7 @@ def main(args):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description='Download imaging studies from the YNHH VNA API. \
-						Uses GUI if no positional argument is specified.')
+						Uses GUI if no positional argument is specified. This does not anonymize the data.')
 	parser.add_argument('search_type', nargs='?', choices=['accnum', 'mrn', 'keyword'],
 				help='whether to search by accession numbers, MRNs, or study_id keywords; required if any other args are specified')
 	action = parser.add_mutually_exclusive_group() # if not included, prompts for additional info in terminal
@@ -621,9 +636,11 @@ if __name__ == "__main__":
 	parser.add_argument('-m', '--modality', help='only include series of a specific modality (MR, CT, etc.)')
 	parser.add_argument('-d1', '--start_date', help='limit study_id date to those on or after this date (YYYYMMDD)')
 	parser.add_argument('-d2', '--end_date', help='limit study_id date to those on or before this date (YYYYMMDD)')
+	parser.add_argument('-l', '--limit', help='limit number of studies to query')
 	parser.add_argument('-r', '--review', action='store_true', help='review queried study/series descriptions before downloading')
 	parser.add_argument('-o', '--overwrite', action='store_true', help='overwrite any existing folders in save_dir')
 	parser.add_argument('-v', '--verbose', action='store_true', help='display download progress')
+	parser.add_argument('-k', '--keep_phi', action='store_true', help='do not anonymize the DICOMs')
 
 	args = parser.parse_args()
 	main(args)
