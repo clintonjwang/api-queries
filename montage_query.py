@@ -60,6 +60,7 @@ Author: Clinton Wang, E-mail: clinton.wang@yale.edu, Github: https://github.com/
 """
 
 import argparse
+from bs4 import BeautifulSoup
 import csv
 import getpass
 import requests
@@ -107,7 +108,7 @@ def init_options():
 def _search_montage(user, pw, search_terms):
 	"""Use AcuoREST API to search VNA for study_id, series, and/or instance numbers associated with an accession number"""
 	search_terms['format'] = 'json'
-	search_terms["limit"] = "1"
+	search_terms["limit"] = "100"
 	#search_terms["includefield"]="all"
 
 	base_url = 'http://montage.ynhh.org'
@@ -123,8 +124,8 @@ def _search_montage(user, pw, search_terms):
 	elif r.status_code >= 500:
 		print(url)
 		raise ValueError('Server exception. Make sure arguments were specified in the right format.')
-	#if r.status_code != 200:
-		#raise ValueError("Invalid request (response code %d) for URL: %s" % (r.status_code, url))
+	elif r.status_code != 200:
+		raise ValueError("Invalid request (response code %d) for URL: %s" % (r.status_code, url))
 		
 	return r, url
 
@@ -136,6 +137,10 @@ def get_first_date(study_events):
 			return date_time[:date_time.find('T')]
 	return "Not found"
 
+def parse_html(html_txt):
+	soup = BeautifulSoup(html_txt, 'html.parser')
+	return '\n'.join([line for line in soup.stripped_strings])
+
 def save_results(save_path, json_results):
 	if not save_path.endswith('.csv'):
 		raise ValueError("save_path must end with .csv")
@@ -146,7 +151,7 @@ def save_results(save_path, json_results):
 		writer.writerow(header)
 		for study in json_results['objects']:
 			writer.writerow((study['patient_mrn'], study['accession_number'],
-							  study['exam_type']['description'], get_first_date(study['events']), study['text']))
+							  study['exam_type']['description'], get_first_date(study['events']), parse_html(study['text'])))
 
 #####################################
 ### Main
@@ -161,14 +166,10 @@ def main(args):
 
 	search_terms = {}
 	search_terms['q'] = "*" + query_terms + "*"
-	#cmd = "curl -u %s:%s http://montage.ynhh.org/api/v1/index/rad/search/?q=*transarterial%20chemo*&format=json" % (user, pw)
 
 	r, url = _search_montage(user, pw, search_terms)
 
 	save_results(options['save_path'], r.json())
-
-	#print("Searching database...")
-	#mrns, acc_nums = collect_accnums(user, pw, query_terms, options)
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description='Retrieve list of MRNs and accession numbers based on a Montage query_terms.')

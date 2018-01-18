@@ -74,7 +74,7 @@ import time
 ### Core methods
 #####################################
 
-def collect_studies(user, pw, query_terms, options):
+def collect_studies(user, pw, query_terms, options, study_search_terms={}):
 	"""Collect all studies for a query
 	
 	Keyword arguments:
@@ -84,7 +84,6 @@ def collect_studies(user, pw, query_terms, options):
 	query_terms -- list of query terms, formatted as strings
 	options -- dict with search parameters; the keys ['search_type', '', ''] are mandatory
 	"""
-	study_search_terms = {}
 	series_search_terms = {}
 	instance_search_terms = {}
 	if options['start_date'] is not None:
@@ -226,7 +225,7 @@ def retrieve_studies(user, pw, study_dict, options, metadata_only=False, get_ser
 			search = '<DicomAttribute tag="00200011" vr="IS" keyword="SeriesNumber">\r\n      <Value number="1">'
 			index = txt.find(search) + len(search)
 			series_num = txt[index:index + txt[index:].find("</Value>")]
-			protocol_name += "_" + series_num
+			series_name += "_" + series_num
 
 			return series_name
 
