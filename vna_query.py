@@ -14,27 +14,47 @@ Options include:
 - Limit by modality
 - Limit by study date
 
+If searching by accession number or keyword, outputs files with the following structure:
+save_directory/
+> accession_num/
+    > vibe_fs_axial_dynamic_post_[series_number]/
+        > 0.dcm
+        > 1.dcm
+        > ...
+        > metadata.xml
+    > t2_haste_tra_trig_[series_number]/
+        > ...
+    > ...
+
+If searching by MRN, it adds a folder layer for the MRN:
+save_directory/
+> MRN/
+	> accession_num/
+	    > vibe_fs_axial_dynamic_post_[series_number]/
+	        > 0.dcm
+	        > ...
+
 Usage:
-	python api_queries.py
+	python vna_query.py
 		#show GUI to guide user through downloading studies
 
-	python api_queries.py mrn -q MR123456789
+	python vna_query.py mrn -q MR123456789
 		#download studies for patient MRN MR123456789 and save in the current folder
 
-	python api_queries.py accnum -q E123456789 E012345678 -s E:/dcms
+	python vna_query.py accnum -q E123456789 E012345678 -s E:/dcms
 		#download studies for accession numbers E123456789 and E012345678, and save in the folder E:/dcms
 
-	python api_queries.py mrn -p E:/mrns.txt -s E:/dcms
+	python vna_query.py mrn -p E:/mrns.txt -s E:/dcms
 		#download studies for all MRNs in mrns.txt and save in E:/dcms
 
-	python api_queries.py keyword -q contrast mri abdom -d1 20160101 -r
-		#find all accession numbers for studies containing keywords "contrast", "mri" AND "abdom"
+	python vna_query.py keyword -q contrast mri abdom -d1 20160101 -r -l 10
+		#find all accession numbers for 10 studies containing keywords "contrast", "mri" AND "abdom"
 		#that took place in 2016 or later; review studies before downloading
 
-	python api_queries.py accnum -p E:/accnums.txt -s E:/dcms -e sub cor -m MR -d1 20020101 -d2 20091231 -ov
+	python vna_query.py accnum -p E:/accnums.txt -s E:/dcms -e sub cor -m MR -d1 20020101 -d2 20091231 -ovk
 		#download studies for all accession numbers in accnums.txt and save in E:/dcms for studies between
 		#2002 and 2009; ignore non-MR series, ignore series with "sub" or "cor" in the description, and
-		#overwrite existing folders in E:/dcms if necessary; use verbose output
+		#overwrite existing folders in E:/dcms if necessary; use verbose output; do not anonymize dicoms
 
 Author: Clinton Wang, E-mail: clinton.wang@yale.edu, Github: https://github.com/clintonjwang/api-queries
 """
@@ -503,7 +523,6 @@ def _search_vna(user, pw, study_id=None, series=None, region='prod', args=None, 
 		if series is not None:
 			url += "/" + series + "/instances"
 
-	#search_terms["limit"]="2"
 	#search_terms["includefield"]="all"
 	if len(search_terms) > 0:
 		query_str = '?' + '&'.join([term + '=' + search_terms[term] for term in search_terms])
@@ -623,7 +642,7 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description='Download imaging studies from the YNHH VNA API. \
 						Uses GUI if no positional argument is specified. This does not anonymize the data.')
 	parser.add_argument('search_type', nargs='?', choices=['accnum', 'mrn', 'keyword'],
-				help='whether to search by accession numbers, MRNs, or study_id keywords; required if any other args are specified')
+				help='whether to search by accession numbers, MRNs, or study keywords; required if any other args are specified')
 	action = parser.add_mutually_exclusive_group() # if not included, prompts for additional info in terminal
 	action.add_argument('-q', '--query', nargs='+', help='one or more space-separated query terms')
 	action.add_argument('-p', '--txt_path', help='path to a txt file containing query terms separated by line breaks, spaces or commas')
