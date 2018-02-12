@@ -235,8 +235,11 @@ def retrieve_studies(user, pw, study_dict, options, metadata_only=False, get_ser
 		for acc_num in study_dict:
 			print("= Loading accession number", acc_num)
 			study_id, instance_dict, _ = study_dict[acc_num]
-			retrieve_study_from_id(user, pw, study_id, instance_dict, os.path.join(options['save_dir'], acc_num),
-				options, metadata_only, get_series_name)
+			try:
+				retrieve_study_from_id(user, pw, study_id, instance_dict, os.path.join(options['save_dir'], acc_num),
+					options, metadata_only, get_series_name)
+			except:
+				raise ValueError("bad accession number "+str(acc_num))
 	
 	elif options['search_type'] == "mrn":
 		for mrn in study_dict:
