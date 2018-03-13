@@ -464,7 +464,7 @@ def retrieve_study_from_id(user, pw, study_id, instance_dict, save_dir, options,
 
 		for count, instance_id in enumerate(instance_dict[series_id]):
 			r, _ = _retrieve_vna(user, pw, filepath=series_dir+"\\"+str(count)+".dcm",
-						  study_id=study_id, series=series_id, instance=instance_id, anonymize_dcm=~options["keep_phi"])
+						  study_id=study_id, series=series_id, instance=instance_id, anonymize_dcm=(not options["keep_phi"]))
 
 			if r is not None:
 				skip_inst += 1
@@ -600,9 +600,13 @@ def _retrieve_vna(user, pw, filepath, study_id=None, series=None, instance=None,
 				for chunk in r.iter_content(chunk_size=128):
 					fd.write(chunk)
 
-			anonymize.anonymize(filename = save_dir + "\\temp.dcm", output_filename=filepath)
+			try:
+				anonymize.anonymize(filename = save_dir + "\\temp.dcm", output_filename=filepath)
+				os.remove(save_dir + "\\temp.dcm")
 
-			os.remove(save_dir + "\\temp.dcm")
+			except:
+				print("Anonymization failed!")
+				os.rename(save_dir + "\\temp.dcm", filepath)
 
 		else:
 			with open(filepath, 'wb') as fd:
